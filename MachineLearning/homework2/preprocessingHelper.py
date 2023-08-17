@@ -303,7 +303,7 @@ class PreprocessingHelper:
                                 "Ratio": dataframe[col].value_counts() / len(dataframe),
                                 f"{target}_mean": dataframe.groupby(col)[target].mean()}), end="\n\n\n")
 
-    def rareEncoder(self,rare_perc,cat_cols,dataframe=None):
+    def rareEncoder(self,rare_perc,cat_cols,dataframe=None,inplace=True):
         """
 
         Encodes rare categories in specified categorical columns of a DataFrame.
@@ -321,11 +321,18 @@ class PreprocessingHelper:
             dataFrame: pandas.DataFrame, optional
                 The DataFrame containing the data to be encoded.
                 If not provided, the function uses the instance's DataFrame attribute.
+            inplace: bool,optional
+                Whether to apply the encoding in-place or return a modified copy.
+                Default is True.
 
         Returns
         ------
-            new_df: pandas.DataFrame
-                A copy of the DataFrame with rare categories encoded as 'Rare'.
+            If inplace is True:
+                dataframe: pandas.DataFrame 
+                    The DataFrame with rare encoding applied, updated in place.
+            If inplace is False:
+                new_df: pandas.DataFrame
+                    A copy of the DataFrame with rare categories encoded as 'Rare'.
 
         """
         if type(dataframe)!=pd.DataFrame:
@@ -333,15 +340,27 @@ class PreprocessingHelper:
             if type(dataframe)!=pd.DataFrame:
                 raise ValueError("Error: Missing parameter 'dataframe'. Please provide the required information.")
         
-        new_df = dataframe.copy()
-        rare_columns = [col for col in cat_cols if (new_df[col].value_counts() / len(new_df) < rare_perc).sum() > 1]
+        if inplace:
+            rare_columns = [col for col in cat_cols if (dataframe[col].value_counts() / len(dataframe) < rare_perc).sum() > 1]
 
-        for col in rare_columns:
-            tmp = new_df[col].value_counts() / len(new_df)
-            rare_labels = tmp[tmp < rare_perc].index
-            new_df[col] = np.where(new_df[col].isin(rare_labels), col+"_"+"Rare", new_df[col])
+            for col in rare_columns:
+                tmp = dataframe[col].value_counts() / len(dataframe)
+                rare_labels = tmp[tmp < rare_perc].index
+                dataframe[col] = np.where(dataframe[col].isin(rare_labels), col+"_"+"Rare", dataframe[col])
+            
+            self.dataframe=dataframe
+            return dataframe
+        
+        else:
+            new_df = dataframe.copy()
+            rare_columns = [col for col in cat_cols if (new_df[col].value_counts() / len(new_df) < rare_perc).sum() > 1]
 
-        return new_df
+            for col in rare_columns:
+                tmp = new_df[col].value_counts() / len(new_df)
+                rare_labels = tmp[tmp < rare_perc].index
+                new_df[col] = np.where(new_df[col].isin(rare_labels), col+"_"+"Rare", new_df[col])
+
+            return new_df
 
     def catSummary(self,col_name,dataframe=None,plot=False):
         """
@@ -412,7 +431,7 @@ class PreprocessingHelper:
         
         quantiles = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
 
-        print(dataframe[numerical_col].describe(quantiles).T)
+        print(dataframe[[numerical_col]].describe(quantiles).T, end="\n\n")
 
         if plot:
             dataframe[numerical_col].hist(bins=20)
@@ -450,7 +469,9 @@ class PreprocessingHelper:
             if type(dataframe)!=pd.DataFrame:
                 raise ValueError("Error: Missing parameter 'dataframe'. Please provide the required information.")
         
-        print(pd.DataFrame({f"{target}_Mean": dataframe.groupby(categorical_col)[target].mean()}), end="\n\n\n")
+        if target!=categorical_col:
+            print(pd.DataFrame({f"{target}_Mean": dataframe.groupby(categorical_col)[target].mean()}), end="\n\n\n")
+            print("##########################################\n")
 
     def highCorrelatedCols(self,dataframe=None,plot=False,corr_th=0.90):
         """
@@ -553,10 +574,16 @@ class PreprocessingHelper:
         """
         if num==None:
             num=len(features)
-        feature_importance=pd.DataFrame({
-            "Value":model.feature_importances_,
-            "Feature":features.columns
-        })
+        try:
+            feature_importance=pd.DataFrame({
+                "Value":model.feature_importances_,
+                "Feature":features.columns
+            })
+        except:
+            feature_importance=pd.DataFrame({
+                "Value":abs(model.coef_[0]),
+                "Feature":features.columns
+            })
         plt.figure(figsize=(10,10))
         sns.set(font_scale=1)
         sns.barplot(x="Value",y="Feature",data=feature_importance.sort_values(by="Value",ascending=False)[0:num])
@@ -609,3 +636,58 @@ class PreprocessingHelper:
     
             temp_list.pop(0)
     
+    def oneHotEncoder(self,cat_cols,dataframe=None,drop_first=True,inplace=True):
+        """
+
+        Apply one-hot encoding to specified categorical columns of a pandas DataFrame.
+
+        This function performs one-hot encoding on the specified categorical columns of the DataFrame.
+        It creates binary columns for each category in the specified columns, where a value of 1
+        indicates the presence of the category, and 0 indicates its absence. The original categorical
+        columns can be dropped if 'drop_first' is set to True.
+
+        Parameters
+        ------
+            rare_perc: float
+                The threshold below which a category is considered rare (0 < rare_perc < 1).
+            cat_cols: list
+                A list of column names with categorical data to be processed.
+            dataFrame: pandas.DataFrame, optional
+                The DataFrame containing the data to be encoded.
+                If not provided, the function uses the instance's DataFrame attribute.
+            drop_first: bool, optional 
+                Whether to drop the first category column in each categorical
+                column. Default is True.
+            inplace: bool,optional
+                Whether to apply the encoding in-place or return a modified copy.
+                Default is True.
+
+        Returns
+        ------
+            If inplace is True:
+                dataframe: pandas.DataFrame 
+                    The DataFrame with one-hot encoding applied, updated in place.
+            If inplace is False:
+                new_df: pandas.DataFrame 
+                    A modified copy of the DataFrame with one-hot encoding applied.
+
+        """
+        if type(dataframe)!=pd.DataFrame:
+            dataframe=self.dataframe
+            if type(dataframe)!=pd.DataFrame:
+                raise ValueError("Error: Missing parameter 'dataframe'. Please provide the required information.")
+        
+        if inplace:
+            for col in cat_cols:
+                dataframe=pd.get_dummies(dataframe,columns=[col],drop_first=drop_first)
+            
+            self.dataframe=dataframe
+            return dataframe
+        
+        else:
+            new_df = dataframe.copy()
+            for col in cat_cols:
+                new_df=pd.get_dummies(new_df,columns=[col],drop_first=drop_first)
+
+            return new_df
+        
